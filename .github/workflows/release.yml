@@ -50,6 +50,8 @@ jobs:
           latest=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo v0.0.0)
           commits=$(git log --format=%B "$latest"..HEAD)
           IFS=. read -r major minor patch <<< "${latest#v}"
+          major=${major//[!0-9]/}; minor=${minor//[!0-9]/}; patch=${patch//[!0-9]/}
+          major=${major:-0}; minor=${minor:-0}; patch=${patch:-0}
           if grep -qiE 'BREAKING[ -]CHANGE|^[[:alpha:]]+(\([^)]*\))?!:' <<< "$commits"; then
             major=$((major + 1)); minor=0; patch=0
           elif grep -qiE '^feat(\([^)]*\))?:' <<< "$commits"; then
@@ -74,9 +76,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           tag="${{ steps.ver.outputs.version }}"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "tag $tag already exists, nothing to release"
+            exit 0
+          fi
           git tag -a "$tag" -m "$tag"
           git push origin "$tag"
-          gh release create "$tag" dist/* \
-            --title "$tag" \
-            --generate-notes \
-            --notes-start-tag "${{ steps.ver.outputs.previous }}"
+          args=(--title "$tag" --generate-notes)
+          if [ "${{ steps.ver.outputs.previous }}" != "v0.0.0" ]; then
+            args+=(--notes-start-tag "${{ steps.ver.outputs.previous }}")
+          fi
+          gh release create "$tag" dist/* "${args[@]}"

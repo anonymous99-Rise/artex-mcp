@@ -24,7 +24,7 @@
 - **配置**：flag / 环境变量 / JSON 文件三级覆盖，凭据文件权限建议 0600。
 - **CLI**：`-check`（连通性与登录自检）、`-list-tools`、`-version`。
 - **工程化**：`cmd/` + `internal/{config,artex,mcp,tools}` 分层，零第三方依赖；httptest 假 ARTEX 覆盖登录、401 重登、工具分发、协议边界；GitHub Actions 执行 gofmt/vet/`go test -race`/构建。
-- **发布**：`make release` 交叉编译 linux/darwin × amd64/arm64，生成 `checksums.txt`。
+- **发布**：`make release` 交叉编译 linux/darwin × amd64/arm64，生成 `checksums.txt`；推送 `main` 后由 GitHub Actions 自动做语义化版本自增、打 tag 并发布 Release。
 
 ### 安全
 
