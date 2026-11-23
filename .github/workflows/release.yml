@@ -1,0 +1,82 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: true
+
+      # HEAD 已经打过 tag（手动发版）或提交信息包含 [skip release] 时不重复发布。
+      - name: Check whether to release
+        id: check
+        run: |
+          if git describe --tags --exact-match HEAD >/dev/null 2>&1; then
+            echo "HEAD already tagged: $(git describe --tags --exact-match HEAD)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif git log -1 --format=%B | grep -qi '\[skip release\]'; then
+            echo "skip requested by commit message"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test
+        if: steps.check.outputs.skip == 'false'
+        run: go test -race ./...
+
+      # 语义化自增：BREAKING CHANGE/! → major，feat → minor，其余 → patch。
+      - name: Compute next version
+        id: ver
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          latest=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo v0.0.0)
+          commits=$(git log --format=%B "$latest"..HEAD)
+          IFS=. read -r major minor patch <<< "${latest#v}"
+          if grep -qiE 'BREAKING[ -]CHANGE|^[[:alpha:]]+(\([^)]*\))?!:' <<< "$commits"; then
+            major=$((major + 1)); minor=0; patch=0
+          elif grep -qiE '^feat(\([^)]*\))?:' <<< "$commits"; then
+            minor=$((minor + 1)); patch=0
+          else
+            patch=$((patch + 1))
+          fi
+          next="v${major}.${minor}.${patch}"
+          echo "previous=$latest" >> "$GITHUB_OUTPUT"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "releasing $latest -> $next"
+
+      - name: Build release binaries
+        if: steps.check.outputs.skip == 'false'
+        run: make release VERSION=${{ steps.ver.outputs.version }}
+
+      - name: Tag and publish
+        if: steps.check.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          tag="${{ steps.ver.outputs.version }}"
+          git tag -a "$tag" -m "$tag"
+          git push origin "$tag"
+          gh release create "$tag" dist/* \
+            --title "$tag" \
+            --generate-notes \
+            --notes-start-tag "${{ steps.ver.outputs.previous }}"

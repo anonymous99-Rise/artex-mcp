@@ -260,6 +260,21 @@ internal/tools/       工具注册表与各领域实现
 scripts/gen_routes.py 路由目录生成脚本
 ```
 
+### 自动发布
+
+推送到 `main` 会触发 [release.yml](.github/workflows/release.yml)：
+
+1. 跑 `go test -race ./...`
+2. 根据上一个 tag 之后的提交信息做语义化自增：`BREAKING CHANGE` / `type!:` → major，`feat:` → minor，其余 → patch
+3. 交叉编译四个平台并生成 `checksums.txt`
+4. 打 tag、创建 GitHub Release（自动生成变更说明）
+
+提交信息含 `[skip release]`，或 HEAD 已经打过 tag（手动发版）时自动跳过。手动发版：
+
+```bash
+git tag -a v1.2.0 -m "v1.2.0" && git push origin v1.2.0
+```
+
 ### 更新路由目录
 
 ARTEX 升级后同步最新路由：
