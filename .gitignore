@@ -1,0 +1,9 @@
+bin/
+*.exe
+*.test
+*.out
+.env
+config.json
+*.local.json
+.DS_Store
+/artex-mcp
