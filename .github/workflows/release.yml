@@ -68,6 +68,37 @@ jobs:
         if: steps.check.outputs.skip == 'false'
         run: make release VERSION=${{ steps.ver.outputs.version }}
 
+      # 发布说明 = 本次提交列表 + CHANGELOG 中对应版本的小节（若存在）。
+      - name: Compose release notes
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          tag="${{ steps.ver.outputs.version }}"
+          prev="${{ steps.ver.outputs.previous }}"
+          ver="${tag#v}"
+          {
+            echo "## 本次变更"
+            if [ "$prev" != "v0.0.0" ]; then
+              git log --pretty=format:'- %s (`%h`)' "$prev"..HEAD
+            else
+              git log --pretty=format:'- %s (`%h`)' -20
+            fi
+            echo
+            echo
+            if grep -q "^## \[${ver}\]" CHANGELOG.md; then
+              echo "## 更新日志"
+              awk -v ver="$ver" '
+                $0 ~ "^## \\[" ver "\\]" { inside = 1; next }
+                inside && /^## \[/ { exit }
+                inside { print }
+              ' CHANGELOG.md
+              echo
+            fi
+            if [ "$prev" != "v0.0.0" ]; then
+              echo "**完整对比**：https://github.com/${{ github.repository }}/compare/${prev}...${tag}"
+            fi
+          } > release-notes.md
+          cat release-notes.md
+
       - name: Tag and publish
         if: steps.check.outputs.skip == 'false'
         env:
@@ -82,8 +113,4 @@ jobs:
           fi
           git tag -a "$tag" -m "$tag"
           git push origin "$tag"
-          args=(--title "$tag" --generate-notes)
-          if [ "${{ steps.ver.outputs.previous }}" != "v0.0.0" ]; then
-            args+=(--notes-start-tag "${{ steps.ver.outputs.previous }}")
-          fi
-          gh release create "$tag" dist/* "${args[@]}"
+          gh release create "$tag" dist/* --title "$tag" --notes-file release-notes.md
